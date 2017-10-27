@@ -480,7 +480,7 @@ static ssize_t rad_recvfrom(int sockfd, uint8_t **pbuf, int flags,
  *
  *************************************************************************/
 static void make_secret(uint8_t *digest, const uint8_t *vector,
-			const char *secret, const uint8_t *value)
+			const char *secret, const uint8_t *value, size_t length)
 {
 	FR_MD5_CTX context;
         int             i;
@@ -490,7 +490,7 @@ static void make_secret(uint8_t *digest, const uint8_t *vector,
 	fr_MD5Update(&context, (const uint8_t *) secret, strlen(secret));
 	fr_MD5Final(digest, &context);
 
-        for ( i = 0; i < AUTH_VECTOR_LEN; i++ ) {
+        for ( i = 0; i < length; i++ ) {
 		digest[i] ^= value[i];
         }
 }
@@ -789,9 +789,8 @@ static uint8_t *vp2data(const RADIUS_PACKET *packet,
 #ifndef NDEBUG
 		if (data == array) return NULL;
 #endif
-		if (len != AUTH_VECTOR_LEN) return NULL;
-		make_secret(ptr, packet->vector, secret, data);
-		len = AUTH_VECTOR_LEN;
+		if (len > AUTH_VECTOR_LEN) len = AUTH_VECTOR_LEN;
+		make_secret(ptr, packet->vector, secret, data, len);
 		break;
 
 
@@ -2315,9 +2314,14 @@ static VALUE_PAIR *data2vp(const RADIUS_PACKET *packet,
 			goto raw;
 		} else {
 			uint8_t my_digest[AUTH_VECTOR_LEN];
+			size_t secret_len;
+
+			secret_len = length;
+			if (secret_len > AUTH_VECTOR_LEN) secret_len = AUTH_VECTOR_LEN;
+
 			make_secret(my_digest,
 				    original->vector,
-				    secret, data);
+				    secret, data, secret_len);
 			memcpy(vp->vp_strvalue, my_digest,
 			       AUTH_VECTOR_LEN );
 			vp->vp_strvalue[AUTH_VECTOR_LEN] = '\0';
@@ -2440,13 +2444,15 @@ static VALUE_PAIR *data2vp(const RADIUS_PACKET *packet,
 
 	case PW_TYPE_TLV:
 		vp->length = length;
-		vp->vp_tlv = malloc(length);
+
+		vp->vp_tlv = malloc(length ? length : 1);
 		if (!vp->vp_tlv) {
 			pairfree(&vp);
 			fr_strerror_printf("No memory");
 			return NULL;
 		}
-		memcpy(vp->vp_tlv, data, length);
+
+		if (length) memcpy(vp->vp_tlv, data, length);
 		break;
 
 	case PW_TYPE_COMBO_IP:
@@ -2548,8 +2554,10 @@ static uint8_t *rad_coalesce(unsigned int attribute, size_t length,
 	uint8_t *ptr, *tlv, *tlv_data;
 
 	for (ptr = data + length;
-	     ptr != (data + packet_length);
+	     ptr < (data + packet_length);
 	     ptr += ptr[1]) {
+		if ((ptr + 2) > (data + length)) return NULL;
+
 		if ((ptr[0] != PW_VENDOR_SPECIFIC) ||
 		    (ptr[1] < (2 + 4 + 3)) || /* WiMAX VSA with continuation */
 		    (ptr[2] != 0) || (ptr[3] != 0)) { /* our requirement */
@@ -2566,7 +2574,14 @@ static uint8_t *rad_coalesce(unsigned int attribute, size_t length,
 		 *	If the vendor-length is too small, it's badly
 		 *	formed, so we stop.
 		 */
-		if ((ptr[2 + 4 + 1]) < 3) break;
+		if ((ptr[2 + 4 + 1]) < 3) return NULL;
+
+		/*
+		 *	If it overflows the packet, it's bad.
+		 */
+		if ((ptr + ptr[2 + 4 + 1]) > (data + packet_length)) {
+			return NULL;
+		}
 
 		tlv_length += ptr[2 + 4 + 1] - 3;
 		if ((ptr[2 + 4 + 1 + 1] & 0x80) == 0) break;
@@ -2583,7 +2598,7 @@ static uint8_t *rad_coalesce(unsigned int attribute, size_t length,
 	 *	our newly created memory.
 	 */
 	for (ptr = data + length;
-	     ptr != (data + packet_length);
+	     ptr < (data + packet_length);
 	     ptr += ptr[1]) {
 		int this_length;
 
@@ -3417,8 +3432,6 @@ int rad_tunnel_pwdecode(uint8_t *passwd, size_t *pwlen, const char *secret,
 
 	encrypted_len = *pwlen;
 
-	//fprintf(stderr, "HERE %d\n", __LINE__);
-
 	/*
 	 *	We need at least a salt.
 	 */
@@ -3445,8 +3458,6 @@ int rad_tunnel_pwdecode(uint8_t *passwd, size_t *pwlen, const char *secret,
 
 	encrypted_len -= 2;		/* discount the salt */
 
-	fprintf(stderr, "HERE %d\n", __LINE__);
-
 	/*
 	 *	Use the secret to setup the decryption digest
 	 */
@@ -3463,8 +3474,6 @@ int rad_tunnel_pwdecode(uint8_t *passwd, size_t *pwlen, const char *secret,
 	 */
 	fr_MD5Update(&context, vector, AUTH_VECTOR_LEN);
 	fr_MD5Update(&context, passwd, 2);
-
-	fprintf(stderr, "HERE %d\n", __LINE__);
 
 	reallen = 0;
 	for (n = 0; n < encrypted_len; n += AUTH_PASS_LEN) {

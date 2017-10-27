@@ -290,7 +290,7 @@ static int ocsp_parse_cert_url(X509 *cert, char **phost, char **pport,
 	aia = X509_get_ext_d2i(cert, NID_info_access, NULL, NULL);
 
 	for (i = 0; i < sk_ACCESS_DESCRIPTION_num(aia); i++) {
-		ad = sk_ACCESS_DESCRIPTION_value(aia, 0);
+		ad = sk_ACCESS_DESCRIPTION_value(aia, i);
 		if (OBJ_obj2nid(ad->method) == NID_ad_OCSP) {
 			if (ad->location->type == GEN_URI) {
 				if(OCSP_parse_url(ad->location->d.ia5->data,
@@ -725,7 +725,7 @@ static int cbtls_verify(int ok, X509_STORE_CTX *ctx)
 			}
 		}
 		if (names != NULL)
-			sk_GENERAL_NAME_free(names);
+			GENERAL_NAMES_free(names);
 	}
 #endif	/* GEN_EMAIL */
 
@@ -866,6 +866,8 @@ static int cbtls_verify(int ok, X509_STORE_CTX *ctx)
 			RDEBUG2("--> Starting OCSP Request");
 			if (X509_STORE_CTX_get1_issuer(&issuer_cert, ctx, client_cert) != 1) {
 				radlog(L_ERR, "Error: Couldn't get issuer_cert for %s", common_name);
+			} else if (!issuer_cert && !subject[0]) {
+				radlog(L_ERR, "Error: Missing issuer_cert and subject for %s", common_name);
 			} else {
 				my_ok = ocsp_check(ocsp_store, issuer_cert, client_cert, conf);
 			}
@@ -1310,11 +1312,16 @@ static SSL_CTX *init_tls_ctx(EAP_TLS_CONF *conf)
 	 *	Callbacks, etc. for session resumption.
 	 */
 	if (conf->session_cache_enable) {
+#if 1
+		DEBUG("WARNING: TLS Session cache is disabled");
+		conf->session_cache_enable = 0;
+#else
 		SSL_CTX_sess_set_new_cb(ctx, cbtls_new_session);
 		SSL_CTX_sess_set_get_cb(ctx, cbtls_get_session);
 		SSL_CTX_sess_set_remove_cb(ctx, cbtls_remove_session);
 
 		SSL_CTX_set_quiet_shutdown(ctx, 1);
+#endif
 	}
 
 	/*
@@ -1375,6 +1382,11 @@ static SSL_CTX *init_tls_ctx(EAP_TLS_CONF *conf)
 	 *	Setup session caching
 	 */
 	if (conf->session_cache_enable) {
+#if 1
+		DEBUG("WARNING: TLS Session cache is disabled");
+		conf->session_cache_enable = 0;
+		SSL_CTX_set_session_cache_mode(ctx, SSL_SESS_CACHE_OFF);
+#else
 		/*
 		 *	Create a unique context Id per EAP-TLS configuration.
 		 */
@@ -1408,7 +1420,7 @@ static SSL_CTX *init_tls_ctx(EAP_TLS_CONF *conf)
 		 *	session cache.
 		 */
 		SSL_CTX_sess_set_cache_size(ctx, conf->session_cache_size);
-
+#endif
 	} else {
 		SSL_CTX_set_session_cache_mode(ctx, SSL_SESS_CACHE_OFF);
 	}
@@ -1633,6 +1645,7 @@ static int eaptls_initiate(void *type_arg, EAP_HANDLER *handler)
 	handler->tls = TRUE;
 	handler->finished = FALSE;
 
+#if 0
 	/*
 	 *	Manually flush the sessions every so often.  If HALF
 	 *	of the session lifetime has passed since we last
@@ -1648,6 +1661,7 @@ static int eaptls_initiate(void *type_arg, EAP_HANDLER *handler)
 		SSL_CTX_flush_sessions(inst->ctx, request->timestamp);
 		inst->conf.session_last_flushed = request->timestamp;
 	}
+#endif
 
 	/*
 	 *	If we're TTLS or PEAP, then do NOT require a client
@@ -1778,9 +1792,11 @@ static int eaptls_initiate(void *type_arg, EAP_HANDLER *handler)
 		break;
 	}
 
+#if 0
 	if (inst->conf.session_cache_enable) {
 		ssn->allow_session_resumption = 1; /* otherwise it's zero */
 	}
+#endif
 
 	/*
 	 *	TLS session initialization is over.  Now handle TLS
@@ -1852,7 +1868,7 @@ static int eaptls_authenticate(void *arg, EAP_HANDLER *handler)
 
 			/* reject if virtual server didn't return accept */
 			if (fake->reply->code != PW_AUTHENTICATION_ACK) {
-				RDEBUG2("Certifictes were rejected by the virtual server");
+				RDEBUG2("Certificates were rejected by the virtual server");
 				request_free(&fake);
 				eaptls_fail(handler, 0);
 				return 0;
@@ -1907,10 +1923,12 @@ static int eaptls_authenticate(void *arg, EAP_HANDLER *handler)
 		 *	the client can't re-use it.
 		 */
 	default:
+#if 0
 		if (inst->conf.session_cache_enable) {
 			SSL_CTX_remove_session(inst->ctx,
 					       tls_session->ssl->session);
 		}
+#endif
 
 		return 0;
 	}

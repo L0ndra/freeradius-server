@@ -98,6 +98,13 @@ void cbtls_msg(int write_p, int msg_version, int content_type,
 	tls_session_t *state = (tls_session_t *)arg;
 
 	/*
+	 *	Work around for pseudo content types in OpenSSL 1.0.2
+	 */
+	if ((msg_version == 0) && (content_type > 255)) return;
+
+	if ((write_p != 0) && (write_p != 1)) return;
+
+	/*
 	 *	Work around bug #298, where we may be called with a NULL
 	 *	argument.  We should really log a serious error
 	 */

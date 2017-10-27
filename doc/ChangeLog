@@ -1,3 +1,51 @@
+FreeRADIUS 2.2.10 Monday 17 Jul 2017 09:00:00 EDT, urgency=high
+	Feature improvements
+	* None.
+
+	Bug fixes
+	* Fix multiple security issues. See
+	  http://freeradius.org/security/fuzzer-2017.html
+	  Thanks to Guido Vranken for working with us to
+	  discover the issues and test the fixes.
+	* FR-GV-207 Avoid zero-length malloc() in data2vp()
+	* FR-GV-206 correct decoding of option 60
+	* FR-GV-205 check for "too long" WiMAX options
+	* FR-GV-204 free VP if decoding fails, so we don't leak memory.
+	* FR-GV-203 fix memory leak when using decode_tlv()
+	* FR-GV-202 check for "too long" attributes
+	* FR-GV-201 check input/output length in make_secret()
+	* FR-AD-001 Use strncmp() instead of memcmp() for bounded data.
+	* Disable in-memory TLS session caches due to OpenSSL API
+	  issues.
+	* Allow issuer_cert to be empty.
+	* Look for extensions using correct index
+	* Fix types
+	* Work around OpenSSL 1.0.2 problems, which cause failures
+	  in TLS-based EAP methods.
+	* Revert RedHat contributed bug which removes run-time checks
+	  for OpenSSL consistency.
+	* Allow OCSP responder URL to be later in the packet.
+	  Fix by Ean Pasternak.
+	* Catch empty subject and non-existent issuer cert in OCSP.
+	  Fix by Ean Pasternak.
+	* Allow non-FIPS for MD5.
+	  Fix by Ean Pasternak.
+
+FreeRADIUS 2.2.9 Wednesday 30 Sep 2015 17:00:00 EDT, urgency=medium
+	Feature improvements
+	* None.
+
+	Bug fixes
+	* Fix Tunnel-Password crash from home server.
+	  Found by Denis Andzakovic.
+	* Fix timer issue when proxying.
+	* Update EAP-TTLS so that MPPE keys are correctly
+	  calculated with TLSv1.2.
+	* Always delete MS-MPPE-* from the TTLS inner tunnel.
+	  This allows TTLS / EAP-MSCHAPv2 to work.
+	* Don't fall through in empty "case" statements.
+	  Fixes #1274.
+
 FreeRADIUS 2.2.8 Thursday 09 Jul 2015 11:00:00 EDT, urgency=medium
 	Feature improvements
 	* None.
@@ -12,9 +60,6 @@ FreeRADIUS 2.2.8 Thursday 09 Jul 2015 11:00:00 EDT, urgency=medium
 	  the response into Access-Reject.
 	* Set X509_V_FLAG_CRL_CHECK_ALL, and add "check_all_crl"
 	  to eap.conf.  Fixes oCert CVE-2015-4680.
-	* Update EAP-TTLS for TLSv1.2
-	* Always delete MS-MPPE-* from the TTLS inner tunnel.
-	  This allows TTLS / EAP-MSCHAPv2 to work.
 
 FreeRADIUS 2.2.7 Wednesday 22 Apr 2015 14:00:00 EST, urgency=medium
 	Feature improvements

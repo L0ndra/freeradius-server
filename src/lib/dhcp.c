@@ -478,12 +478,13 @@ static int decode_tlv(VALUE_PAIR *tlv, const uint8_t *data, size_t data_len)
 		}
 
 		if (fr_dhcp_attr2vp(vp, p + 2, p[1]) < 0) {
+			pairfree(&vp);
 			pairfree(&head);
 			goto make_tlv;
 		}
 
 		*tail = vp;
-		tail = &(vp->next);
+		while (*tail) tail = &((*tail)->next);
 		p += 2 + p[1];
 	}
 
@@ -494,19 +495,17 @@ static int decode_tlv(VALUE_PAIR *tlv, const uint8_t *data, size_t data_len)
 	if (head) {
 		memcpy(tlv, head, sizeof(*tlv));
 		head->next = NULL;
+		if (head->type == PW_TYPE_TLV) head->vp_tlv = NULL;
 		pairfree(&head);
 	}
 
 	return 0;
 
 make_tlv:
-	tlv->vp_tlv = malloc(data_len);
-	if (!tlv->vp_tlv) {
-		fr_strerror_printf("No memory");
-		return -1;
-	}
-	memcpy(tlv->vp_tlv, data, data_len);
+	if (data_len > sizeof(tlv->vp_octets)) data_len = sizeof(tlv->vp_octets);
+	memcpy(tlv->vp_octets, data, data_len);
 	tlv->length = data_len;
+	tlv->type = PW_TYPE_OCTETS;
 
 	return 0;
 }
@@ -599,6 +598,12 @@ ssize_t fr_dhcp_decode_options(uint8_t *data, size_t len, VALUE_PAIR **head)
 					   p[0], p[1]);
 			continue;
 		}
+
+		/*
+		 *	End of this attribute past the end of the
+		 *	packet: ignore it.
+		 */
+		if (next > (data + len)) break;
 
 		da = dict_attrbyvalue(DHCP2ATTR(p[0]));
 		if (!da) {
@@ -793,6 +798,7 @@ int fr_dhcp_decode(RADIUS_PACKET *packet)
 	 */
 	if (fr_dhcp_decode_options(packet->data + 240, packet->data_len - 240,
 				   tail) < 0) {
+		pairfree(&head);
 		return -1;
 	}
 
@@ -814,7 +820,7 @@ int fr_dhcp_decode(RADIUS_PACKET *packet)
 			/*
 			 *	Vendor is "MSFT 98"
 			 */
-			vp = pairfind(head, DHCP2ATTR(63));
+			vp = pairfind(head, DHCP2ATTR(60));
 			if (vp && (strcmp(vp->vp_strvalue, "MSFT 98") == 0)) {
 				vp = pairfind(head, DHCP2ATTR(262));
 
@@ -1452,6 +1458,7 @@ int fr_dhcp_encode(RADIUS_PACKET *packet)
 			 *	limitations: sizeof(vp->vp_octets) < 255
 			 */
 			if (length > 255) {
+				pairfree(&vp);
 				fr_strerror_printf("WARNING Ignoring too long attribute %s!", vp->name);
 				break;
 			}
